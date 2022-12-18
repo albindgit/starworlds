@@ -22,9 +22,6 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
 
     def dilated_obstacle(self, padding, id="new", name=None):
         cp = super().dilated_obstacle(padding, id=id, name=name)
-        # cp = self.copy(id, name)
-        # cp._polygon = cp._polygon.buffer(padding, cap_style=1, join_style=1)
-        # cp.vertices = np.array(cp._polygon.exterior.coords[:-1])
         cp._update_vertex_angles()
         return cp
 
@@ -54,13 +51,6 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
         n_obstacle /= np.linalg.norm(n_obstacle)
 
         return self.rotate(n_obstacle, Frame.OBSTACLE, output_frame)
-
-        # n_obstacle2 = np.array([self.circular_vertices[v_idx + 1, 1] - self.circular_vertices[v_idx, 1], self.circular_vertices[v_idx, 0] - self.circular_vertices[v_idx + 1, 0]])
-        # n_obstacle2 /= np.linalg.norm(n_obstacle2)
-        #
-        # b = self.boundary_mapping(x_obstacle, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
-        #
-        # idx_scale = min(0.5 + np.linalg.norm(b-self.vertices[v_idx, :]), 1)
 
         _, ax = self.draw(frame=Frame.OBSTACLE)
         ax.plot(*x_obstacle, 'ks')

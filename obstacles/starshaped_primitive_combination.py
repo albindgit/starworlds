@@ -1,13 +1,12 @@
 import shapely
 import numpy as np
 from obstacles import Frame, StarshapedObstacle, StarshapedPolygon
-from utils import is_ccw, is_cw, draw_shapely_polygon, tic, toc
+from utils import is_ccw, is_cw, draw_shapely_polygon
 import matplotlib.pyplot as plt
 
 # Note: Local == Global frame
 class StarshapedPrimitiveCombination(StarshapedObstacle):
 
-    # TODO: Compute polygon only when accessed first time
     def __init__(self, obstacle_cluster, hull_cluster, xr, **kwargs):
         self._obstacle_cluster = obstacle_cluster
         self._hull_cluster = hull_cluster
@@ -161,4 +160,3 @@ class StarshapedPrimitiveCombination(StarshapedObstacle):
         if self._hull_cluster is not None:
             obs_pol += [self._hull_cluster]
         self._polygon = shapely.ops.unary_union(obs_pol)
-        # self._polygon = shapely.geometry.Polygon(polygon)

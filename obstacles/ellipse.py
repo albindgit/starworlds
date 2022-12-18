@@ -2,7 +2,7 @@ from obstacles import StarshapedObstacle, Frame
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from utils import is_ccw, tic, toc
+from utils import is_ccw
 import shapely
 
 
@@ -58,8 +58,6 @@ class Ellipse(StarshapedObstacle):
 
     def boundary_mapping(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL):
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
-        # xdir_obstacle = self.reference_direction(x_obstacle, Frame.OBSTACLE, Frame.OBSTACLE)
-        # xr_dist = np.linalg.norm(x_obstacle-self._xr)
         intersect_obstacle = self.line_intersection([self._xr, self._xr+10*(x_obstacle-self._xr)],
                                                     input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
         if not intersect_obstacle:
@@ -140,38 +138,20 @@ class Ellipse(StarshapedObstacle):
 
             if l_right_obstacle[0] < x_intersect_left_obstacle[0] or x_intersect_right_obstacle[0] < l_left_obstacle[0] or \
                     x_intersect_left_obstacle[0] < l_left_obstacle[0] < l_right_obstacle[0] < x_intersect_right_obstacle[0]:
-                # print("No intersection")
                 return []
             elif x_intersect_left_obstacle[0] < l_left_obstacle[0]:
-                # print("Right")
                 return [x_intersect_right]
             elif l_right_obstacle[0] < x_intersect_right_obstacle[0]:
-                # print("Left")
                 return [x_intersect_left]
             else:
-                # print("Both")
-                # print(l0_obstacle, l1_obstacle)
-                # print(l_right_obstacle[0],l_left_obstacle[0])
-                # print(x_intersect_left_obstacle, x_intersect_right_obstacle)
-                # import matplotlib.pyplot as plt
-                # plt.show()
                 return [x_intersect_left, x_intersect_right]
 
     def tangent_points(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL):
-
-        t0 = tic()
-
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
-
         if not self.exterior_point(x_obstacle, Frame.OBSTACLE):
             return []
-
         px, py = x_obstacle
-        t1 = toc(t0)
 
-        # print("Init: {:.3f}".format(t1))
-
-        t0 = tic()
         # Special case with vertical tangent
         a2 = self._a**2
         vertical_tangent = abs(a2[0] - px**2) < 1e-5
@@ -197,14 +177,8 @@ class Ellipse(StarshapedObstacle):
             tp1_obstacle = np.array([x1, y1])
             tp2_obstacle = np.array([x2, y2])
 
-        t2 = toc(t0)
-        # print("TP Compute: {:.3f}".format(t1))
-        t0 = tic()
         tp1 = self.transform(tp1_obstacle, Frame.OBSTACLE, output_frame)
         tp2 = self.transform(tp2_obstacle, Frame.OBSTACLE, output_frame)
-        t3 = toc(t0)
-
-        # print("(Init/TP/Transform): ({:.3f},{:.3f},{:.3f})".format(t1, t2, t3))
 
         if is_ccw(x, tp1, tp2):
             tp1, tp2 = tp2, tp1

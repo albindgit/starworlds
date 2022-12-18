@@ -79,31 +79,6 @@ def test_cluster_and_starify_compute():
             res['compute_time'][i, :] = timing
             res['Ncl'][i] = len(clusters)
 
-            # if res['n_iter'][i] == 2:
-            #     _, _, _, _ = cluster_and_starify(obstacles, x, xg, par['epsilon'], make_convex=0, visualize=1)
-            #     print(i)
-            #     if i == 3:
-            #         print("Drawing vector field...")
-            #         from motion_control.soads import soads
-            #         ps = np.zeros((2, 1000))
-            #         ps[:, 0] = x
-            #         for k in range(1, 1000):
-            #             if np.linalg.norm(ps[:, k-1]-xg) < 0.05:
-            #                 dp = np.zeros(2)
-            #             else:
-            #                 dp = soads.f(ps[:, k-1], xg, star_obstacles, crep=1.5)
-            #             ps[:, k] = ps[:, k-1] + dp * 0.05
-            #         fig_sp, ax_sp = plt.subplots()
-            #         ax_sp.plot(*x, 'ko')
-            #         ax_sp.plot(*xg, 'k*')
-            #         ax_sp.plot(ps[0, :], ps[1, :], 'y--', linewidth=2)
-            #         [draw_shapely_polygon(o.polygon(), ax=ax_sp, fc='lightgrey', ec='k') for o in star_obstacles]
-            #         soads.draw_vector_field(xg, star_obstacles, ax_sp, [0, res['scene_width'][i]], [0, res['scene_width'][i]], n=20, density=0.7, linewidth=0.2)
-            #         ax_sp.axis('off')
-            #         plt.show()
-
-            #                if res['n_iter'][i] == 3 or sum(timing) > time_warn_thresh:
-
             if plot_fail and flag == 0:
                 _, ax_i = plt.subplots()
                 [o.draw(ax=ax_i, fc='g', alpha=0.8) for o in star_obstacles]
@@ -124,8 +99,6 @@ def test_cluster_and_starify_compute():
                             res['scene_coverage'][i], par['target_scene_coverage']))
                 plt.show()
 
-            # if flag == 0:
-            #     print("Fail with\n Scene area: {:.1f}, Scene coverage: {:.0f}%, No: {}".format(res['scene_width'][i]**2, res['scene_coverage'][i]*100, res['No'][i]))
             if n_failures == 5:
                 break
 

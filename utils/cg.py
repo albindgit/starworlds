@@ -3,6 +3,7 @@ import shapely.geometry
 import shapely.ops
 import matplotlib.pyplot as plt
 from typing import List, Tuple
+from utils import draw_shapely_polygon
 
 DEFAULT_RAY_INFINITY_LENGTH = 100000.
 COLLINEAR_THRESHOLD = 1e-10

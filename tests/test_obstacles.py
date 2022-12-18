@@ -97,6 +97,13 @@ def test_star_primitive_combination():
         ax.plot(*zip(x, tp[0]), 'g:')
         ax.plot(*zip(x, tp[1]), 'g:')
     ax.quiver(*star_obs.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
+
+    for i in np.linspace(0, 2 * np.pi, 100):
+        x = star_obs.xr() + np.array([np.cos(i), np.sin(i)])
+        b = star_obs.boundary_mapping(x)
+        n = star_obs.normal(x)
+        ax.quiver(*b, *n)
+
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 

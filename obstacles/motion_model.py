@@ -19,18 +19,7 @@ class MotionModel(ABC):
         if forbidden_regions is not None:
             tmp_obs = obs_self.dilated_obstacle(padding=dist, id="temp")
             if np.any([tmp_obs.interior_point(p) for p in forbidden_regions]):
-                # import matplotlib.pyplot as plt
-                # import obstacles as ob
-                # fig, ax = plt.subplots()
-                # # [ob.draw_shapely_polygon(p, ax=ax, fc='r') for p in forbidden_regions]
-                # tmp_obs.draw(ax=ax, state=next_state, fc='g')
-                # for p in forbidden_regions:
-                #     ax.plot(*p, 'rx')
-                # ax.set_xlim([0, 12])
-                # ax.set_ylim([0, 10])
-                # plt.show()
                 self._pos, self._rot = prev_pos, prev_rot
-
         self._t += dt
 
     def set_pos(self, pos):
@@ -61,9 +50,6 @@ class Static(MotionModel):
 
     def rot_vel(self):
         return 0.
-
-    # def move(self, obs_self, dt, forbidden_regions=None, dist=0):
-    #     pass
 
 
 class SinusVelocity(MotionModel):
@@ -106,8 +92,6 @@ class Interval(MotionModel):
             dir = self.pos_point[-1] - self.pos()
             if np.linalg.norm(dir) > vel_norm:
                 dir /= np.linalg.norm(dir)
-            # if abs(vel_norm) < 0.01:
-            #     vel_norm = 0
             return vel_norm * dir
         idx = np.argmax(self._t < self.time_point)
         return (self.pos_point[idx] - self.pos_point[idx-1]) / (self.time_point[idx] - self.time_point[idx-1])
@@ -134,7 +118,6 @@ class Waypoints(MotionModel):
             self._wp_idx += 1
             return self.lin_vel()
         dir /= wp_dist
-        # vel = min(self.vel, wp_dist/self.dt)
         return self.vel * dir
 
     def rot_vel(self):

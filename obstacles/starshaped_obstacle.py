@@ -30,11 +30,6 @@ class StarshapedObstacle(Obstacle):
 
     def distance_function(self, x, input_frame=Frame.GLOBAL):
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
-        if self.boundary_mapping(x_obstacle, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE) is None:
-            import matplotlib.pyplot as plt
-            _, ax = self.draw()
-            ax.plot(*x, 'o')
-            plt.show()
         dist_func = (np.linalg.norm(x_obstacle - self._xr, axis=x.ndim - 1) / (
             np.linalg.norm(self.boundary_mapping(x_obstacle, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
                            - self._xr, axis=x.ndim - 1))) ** 2

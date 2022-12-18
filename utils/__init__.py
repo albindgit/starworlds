@@ -1,2 +1,2 @@
-from .cg import *
 from .misc import *
+from .cg import *

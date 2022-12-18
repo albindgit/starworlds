@@ -1,73 +1,51 @@
 import shapely
 import numpy as np
 from obstacles import Polygon
-from utils import is_ccw, is_cw, line, ray, Cone, tic, toc, convex_hull
+from utils import is_ccw, is_cw, line, ray, Cone, convex_hull
 import matplotlib.pyplot as plt
 
 
 def admissible_kernel(obstacle, x):
     # Find tangents of obstacle through x
-    t0 = tic()
     tps = obstacle.tangent_points(x)
-    tp_time = toc(t0)
-    # print("TP calculation ({:s}): {:.3f}".format(obstacle.__class__.__name__, tp_time))
-
     if not tps:
         # Interior point
         return None
-
-    t0 = tic()
-    rc = Cone(x, x-tps[0], x-tps[1])
-    ct = toc(t0)
-    # print("Cone calculation: {:.3f}".format(ct))
-    return rc
+    return Cone(x, x-tps[0], x-tps[1])
 
 
 # Computes the starshaped hull of a list of obstacles for specified kernel points
-def kernel_starshaped_hull(obstacles, kernel_points, timing_verbose=False):
+def kernel_starshaped_hull(obstacles, kernel_points):
     if not type(obstacles) is list:
         if obstacles.is_convex():
-            return convex_kernel_starshaped_hull(obstacles, kernel_points, timing_verbose)
+            return convex_kernel_starshaped_hull(obstacles, kernel_points)
         if issubclass(obstacles.__class__, Polygon):
             return polygon_kernel_starshaped_hull(obstacles.polygon(), kernel_points)
         else:
             print("[kernel_starshaped_hull]: Bad obstacle class.")
             print(obstacles)
 
-    sub_pols = [kernel_starshaped_hull(o, kernel_points, timing_verbose) for o in obstacles]
-    t0 = tic()
+    sub_pols = [kernel_starshaped_hull(o, kernel_points) for o in obstacles]
     hull_polygon = shapely.ops.unary_union(sub_pols)
-    un_time = toc(t0)
-    if timing_verbose:
-        print("Star hull union timing: {:.2f}".format(un_time))
     if hull_polygon.is_empty:
         return None
     return hull_polygon
 
 
-def convex_kernel_starshaped_hull(convex_obstacle, kernel_points, timing_verbose=False):
-    t0 = tic()
+def convex_kernel_starshaped_hull(convex_obstacle, kernel_points):
     tps = []
     for k in kernel_points:
         tps += convex_obstacle.tangent_points(k)
     if not tps:
-        if timing_verbose:
-            print("[{} {}] Star hull timing, (TP/CH): ({:.2f}, {:.2f})".format(convex_obstacle.__class__.__name__, convex_obstacle.id(), toc(t0), 0))
         return shapely.geometry.Polygon([])
 
     tps = np.unique(tps,axis=0)
     ch_points = np.vstack((tps, kernel_points))
-
-    tp_time = toc(t0)
-
-    t0 = tic()
     pol = convex_hull(ch_points)
-    ch_time = toc(t0)
-    if timing_verbose:
-        print("[{} {}] Star hull timing, (TP/CH): ({:.2f}, {:.2f})".format(convex_obstacle.__class__.__name__, convex_obstacle.id(), tp_time, ch_time))
     return shapely.geometry.Polygon(pol)
 
 
+# TODO: Improve computational consideration
 def polygon_kernel_starshaped_hull(polygon, kernel_points, debug=0):
     kernel_points = kernel_points.reshape((kernel_points.size//2, 2))
 
@@ -224,8 +202,6 @@ def polygon_kernel_starshaped_hull(polygon, kernel_points, debug=0):
         [ax.plot(*zip(k, sv), 'y--') for sv in star_vertices for k in kernel_points]
         ax.plot(*k_centroid, 'bs')
         plt.show()
-
-    # vertices_obstacle = polygon.transform(star_vertices, Frame.GLOBAL, Frame.OBSTACLE)
 
     return shapely.geometry.Polygon(star_vertices)
 
