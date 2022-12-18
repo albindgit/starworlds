@@ -2,30 +2,13 @@ import numpy as np
 import shapely.geometry
 import shapely.ops
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import time
-import inspect
-import traceback
 from typing import List, Tuple
 
 DEFAULT_RAY_INFINITY_LENGTH = 100000.
 COLLINEAR_THRESHOLD = 1e-10
 
-def logprint(message=None, print_stack=0):
-  callerframerecord = inspect.stack()[1]    # 0 represents this line
-                                            # 1 represents line at caller
-  frame = callerframerecord[0]
-  info = inspect.getframeinfo(frame)
-  # print(info.filename)
-  if print_stack:
-    traceback.print_stack()
-  print(info.function + ", line: " + str(info.lineno))
-  if message:
-      print(message)
 
 def affine_transform(x, rotation, translation, inverse=False):
-    # x_t = np.array(x, dtype='float64')
-    # t = np.array([0., 0.]) if translation is None else np.array(translation)
     if inverse:
         x_t = [x[0] - translation[0], x[1] - translation[1]]
         if rotation == 0:
@@ -229,31 +212,6 @@ def equilateral_triangle(centroid, side_length, rot=0):
     return np.array([[c * triangle[0, 0] - s * triangle[0, 1], s * triangle[0, 0] + c * triangle[0, 1]],
                      [c * triangle[1, 0] - s * triangle[1, 1], s * triangle[1, 0] + c * triangle[1, 1]],
                      [c * triangle[2, 0] - s * triangle[2, 1], s * triangle[2, 0] + c * triangle[2, 1]]])
-
-
-def draw_shapely_polygon(pol, ax=None, xlim=None, ylim=None, **kwargs):
-    if ax is None:
-        _, ax = plt.subplots(subplot_kw={'aspect': 'equal'})
-    pol_list = []
-    handles = []
-    if pol.geom_type == 'Polygon':
-        pol_list += [pol]
-    else:
-        for p in pol.geoms:
-            if p.geom_type == 'Polygon':
-                pol_list += [p]
-    for p in pol_list:
-        if xlim is not None and ylim is not None:
-            pol_plot = p.intersection(shapely.geometry.box(xlim[0] - 1, ylim[0] - 1, xlim[1] + 1, ylim[1] + 1))
-        else:
-            pol_plot = p
-        handles += [patches.Polygon(xy=np.vstack((pol_plot.exterior.xy[0], pol_plot.exterior.xy[1])).T, **kwargs)]
-        ax.add_patch(handles[-1])
-        if xlim is not None:
-            ax.set_xlim(xlim)
-        if ylim is not None:
-            ax.set_ylim(ylim)
-    return handles, ax
 
 
 def convex_hull(points):
@@ -632,11 +590,3 @@ def random_angle_steps(steps: int, irregularity: float) -> List[float]:
     for i in range(steps):
         angles[i] /= cumsum
     return angles
-
-
-def tic():
-    return time.time()
-
-
-def toc(t0):
-    return (time.time()-t0) * 1000
