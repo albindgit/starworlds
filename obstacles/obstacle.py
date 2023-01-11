@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import numpy as np
 import shapely
+from shapely import affinity as sh_affinity
 from utils import affine_transform
 from copy import deepcopy
 from enum import Enum
@@ -82,7 +83,7 @@ class Obstacle(ABC):
                 c, s = np.cos(current_pose[2]), np.sin(current_pose[2])
                 trans_matrix = np.array([[c, -s, current_pose[0]], [s, c, current_pose[1]], [0, 0, 1]])
                 affinity_matrix = [trans_matrix[0, 0], trans_matrix[0, 1], trans_matrix[1, 0], trans_matrix[1, 1], trans_matrix[0, 2], trans_matrix[1, 2]]
-                self._polygon_global = shapely.affinity.affine_transform(self._polygon, affinity_matrix)
+                self._polygon_global = sh_affinity.affine_transform(self._polygon, affinity_matrix)
             return self._polygon_global
         else:
             raise Frame.InvalidFrameError
