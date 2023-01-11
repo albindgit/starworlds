@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from obstacles import Ellipse, Polygon, StarshapedPolygon, StarshapedPrimitiveCombination, Frame
 from obstacles import motion_model as mm
-from utils import generate_convex_polygon, draw_shapely_polygon
+from utils import generate_convex_polygon, draw_shapely_polygon, generate_star_polygon
 import shapely.geometry
 
 
@@ -39,7 +39,38 @@ def test_nonstar_polygon():
 
 
 def test_star_polygon():
-    pass
+    avg_radius = 1
+    xlim = [-2*avg_radius, 2*avg_radius]
+    ylim = xlim
+    pol = StarshapedPolygon(generate_star_polygon([0, 0], avg_radius, irregularity=0.3, spikiness=0.5, num_vertices=10))
+
+    while True:
+        x = np.array([np.random.uniform(*xlim), np.random.uniform(*ylim)])
+        if pol.exterior_point(x):
+            break
+    b = pol.boundary_mapping(x)
+    n = pol.normal(x)
+    tp = pol.tangent_points(x)
+    dir = pol.reference_direction(x)
+
+    _, ax = pol.draw()
+    ax.plot(*zip(pol.xr(Frame.GLOBAL), x), 'k--o')
+    if b is not None:
+        ax.plot(*b, 'y+')
+        ax.quiver(*b, *n)
+    if tp:
+        ax.plot(*zip(x, tp[0]), 'g:')
+        ax.plot(*zip(x, tp[1]), 'g:')
+    ax.quiver(*pol.xr(Frame.GLOBAL), *dir, color='c', zorder=3)
+
+    for i in np.linspace(0, 2 * np.pi, 100):
+        x = pol.xr() + 100*np.array([np.cos(i), np.sin(i)])
+        b = pol.boundary_mapping(x)
+        n = pol.normal(b)
+        ax.quiver(*b, *n)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    print("es")
 
 def test_star_primitive_combination():
     n_ellipses = 3
@@ -101,8 +132,8 @@ def test_star_primitive_combination():
     for i in np.linspace(0, 2 * np.pi, 100):
         x = star_obs.xr() + np.array([np.cos(i), np.sin(i)])
         b = star_obs.boundary_mapping(x)
-        n = star_obs.normal(x)
-        ax.quiver(*b, *n)
+        n = star_obs.normal(b)
+        # ax.quiver(*b, *n)
 
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
@@ -110,7 +141,7 @@ def test_star_primitive_combination():
 
 if (__name__) == "__main__":
     # test_ellipse()
-    test_nonstar_polygon()
-    test_star_polygon()
+    # test_nonstar_polygon()
+    # test_star_polygon()
     test_star_primitive_combination()
     plt.show()

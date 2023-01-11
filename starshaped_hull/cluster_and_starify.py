@@ -190,7 +190,7 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
     for o in obstacles:
         # Ensure not xr in l(x,xg)
         while is_collinear(x, o.xr(), xg):
-            o.set_xr(o.xr(Frame=Frame.OBSTACLE) + np.random.normal(0, 0.01, 2))
+            o.set_xr(o.xr(output_frame=Frame.OBSTACLE) + np.random.normal(0, 0.01, 2))
         clusters += [ObstacleCluster([o])]
         # clusters[-1].polygon()
 

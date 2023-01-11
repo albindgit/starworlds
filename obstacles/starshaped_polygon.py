@@ -39,7 +39,7 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
             else:
                 return self.transform(intersect_obstacle[1], Frame.OBSTACLE, output_frame)
 
-    def normal(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL, x_is_boundary=False):
+    def normal(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL, x_is_boundary=False, type='edge'):
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
         angle = np.arctan2(x_obstacle[1]-self._xr[1], x_obstacle[0]-self._xr[0])
         v_idx = np.argmax(self.vertex_angles > angle)
@@ -47,71 +47,87 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
         if v_idx == self.vertices.shape[0]:
             v_idx = 0
 
-        n_obstacle = np.array([self.vertices[v_idx, 1] - self.vertices[v_idx - 1, 1], self.vertices[v_idx - 1, 0] - self.vertices[v_idx, 0]])
-        n_obstacle /= np.linalg.norm(n_obstacle)
+        if type == 'edge':
+            n_obstacle = np.array([self.vertices[v_idx, 1] - self.vertices[v_idx - 1, 1], self.vertices[v_idx - 1, 0] - self.vertices[v_idx, 0]])
+            n_obstacle /= np.linalg.norm(n_obstacle)
+        elif type == 'weighted_edges':
+            edge_neighbors = [(self.vertices[(v_idx - 2 + i) % self.vertices.shape[0]], self.vertices[(v_idx - 1 + i) % self.vertices.shape[0]]) for i in range(3)]
+            edge_neighbors_normal = np.array([[e[1][1] - e[0][1],
+                                              e[0][0] - e[1][0]] for e in edge_neighbors])
+            edge_closest = [shapely.ops.nearest_points(shapely.geometry.LineString(e),
+                                                       shapely.geometry.Point(x_obstacle))[0].coords[0] for e in edge_neighbors]
 
+            dist = [np.linalg.norm(np.array(e)-x_obstacle) for e in edge_closest]
+            w = np.array([1/(d+1e-6) for d in dist])
+            w /= sum(w)
+            n_obstacle = edge_neighbors_normal.T.dot(w)
         return self.rotate(n_obstacle, Frame.OBSTACLE, output_frame)
 
-        _, ax = self.draw(frame=Frame.OBSTACLE)
-        ax.plot(*x_obstacle, 'ks')
-        ax.quiver(*self.boundary_mapping(x_obstacle, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE), *n_obstacle)
 
-        n = self.vertices.shape[0]
-        Rpn = np.eye(2)
-        ws = np.zeros(n)
-        kappa = np.zeros(n)
-        # v_idx -= 1
-        # v_idcs = np.arange(v_idx - 1, v_idx + 3)
-        # if v_idcs[-1] == self.vertices.shape[0]:
-        #     v_idcs[-1] = 0
-        p = 3
-        for i in range(n):
-            # surface_i = np.array([self.vertices[v_idcs[i] - 1, :], self.vertices[v_idcs[i], :]])
-            # edge_normal_i = np.array([-(surface_i[0, 1] - surface_i[1, 1]), surface_i[0, 0] - surface_i[1, 0]])
-            edge_normals[i, :] = np.array([self.vertices[i, 1] - self.vertices[i - 1, 1], self.vertices[i - 1, 0] - self.vertices[i, 0]])
-            edge_normals[i, :] = edge_normals[i, :] / np.linalg.norm(edge_normals[i, :])
-            # rotated_edge_normal_i = Rpn.T.dot(edge_normal_i)
-
-            pi = np.array(
-                shapely.ops.nearest_points(shapely.geometry.LineString([self.vertices[i-1, :], self.vertices[i, :]]),
-                                           shapely.geometry.Point(x_obstacle))[0].coords[0])
-            # ax.quiver(*pi, *edge_normals[i, :], color='k')
-
-            vi = x_obstacle - pi
-            ei = (vi - edge_normals[i, :].dot(vi)*edge_normals[i, :]) * np.sign(vi.dot(x_obstacle-self._xr))
-            phi = np.arccos(edge_normals[i, :].dot(vi) / (np.linalg.norm(edge_normals[i, :]) * np.linalg.norm(vi)) * np.sign(edge_normals[i, :].dot(vi)))
-
-            if phi == 0:
-                ws[i] = 0
-            else:
-                ws[i] = (np.pi / phi) ** p - 1
-
-            # if np.all(np.isclose(pi, x_obstacle)):
-            #     ws[i] = -1
-            # else:
-            #     ws[i] = 1 / np.linalg.norm(x_obstacle - pi) ** 2
-
-            # kappa[i] = 0 if rotated_edge_normal_i[0] == 1 else np.arccos(rotated_edge_normal_i[0]) * np.sign(
-            #     rotated_edge_normal_i[1])
-
-            # v_idx += 1
-
-        # if np.any(ws < 0):
-        #     ws[np.nonzero(ws > 0)] = 0
-        #     ws[np.nonzero(ws)] = 1
+        #directional weighted mean (see Appendix A) of normal vectors of the surface tiles ni(ξ), the weights wi,
+        # and with respect to the reference direction r
+        # n_vert = self.vertices.shape[0]
+        # r = self.reference_direction(x, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
+        # B = np.array((r, (-r[1], r[0])))
+        # ws = np.zeros(n_vert)
+        # kappa = np.zeros(n_vert)
+        # p = 3
+        # vi_min = np.inf
         #
-        ws = ws / np.sum(ws)
-        # n_obstacle2 =
-
+        # edge_r = np.zeros((n_vert, 2))
+        # _, ax = self.draw(frame=Frame.OBSTACLE)
+        # ax.plot(*x_obstacle, 'ko')
+        # for i in range(n_vert):
+        #     # surface_i = np.array([self.vertices[v_idcs[i] - 1, :], self.vertices[v_idcs[i], :]])
+        #     # edge_normal_i = np.array([-(surface_i[0, 1] - surface_i[1, 1]), surface_i[0, 0] - surface_i[1, 0]])
+        #     edge_normal_i = np.array([self.vertices[i, 1] - self.vertices[i - 1, 1], self.vertices[i - 1, 0] - self.vertices[i, 0]])
+        #     edge_normal_i /= np.linalg.norm(edge_normal_i)
+        #     # rotated_edge_normal_i = Rpn.T.dot(edge_normal_i)
+        #
+        #     pi = np.array(
+        #         shapely.ops.nearest_points(shapely.geometry.LineString([self.vertices[i-1, :], self.vertices[i, :]]),
+        #                                    shapely.geometry.Point(x_obstacle))[0].coords[0])
+        #     # ax.quiver(*pi, *edge_normals[i, :], color='k')
+        #     edge_r[i, :] = [np.mean([self.vertices[i, 0], self.vertices[i - 1, 0]]),
+        #                     np.mean([self.vertices[i, 1], self.vertices[i - 1, 1]])]
+        #     vi = x_obstacle - pi
+        #     ei = (vi - edge_normal_i.dot(vi)*edge_normal_i) * np.sign(vi.dot(x_obstacle-edge_r[i, :]))
+        #     phi = np.arccos(ei.dot(vi) / (np.linalg.norm(ei) * np.linalg.norm(vi))) * np.sign(edge_normal_i.dot(vi))
+        #
+        #     if phi > 0:
+        #         ws[i] = 0
+        #     else:
+        #         ws[i] = (np.pi / phi) ** p - 1
+        #
+        #     # if np.linalg.norm(vi) < vi_min:
+        #     #     ws = np.zeros(n_vert)
+        #     #     ws[i] = 1
+        #     #     vi_min = np.linalg.norm(vi)
+        #
+        #
+        #
+        #     # if np.all(np.isclose(pi, x_obstacle)):
+        #     #     ws[i] = -1
+        #     # else:
+        #     #     ws[i] = 1 / np.linalg.norm(x_obstacle - pi) ** 2
+        #     rotated_edge_normal_i = B.T.dot(edge_normal_i)
+        #
+        #     kappa[i] = 0 if rotated_edge_normal_i[0] == 1 else np.arccos(rotated_edge_normal_i[0]) * np.sign(
+        #         rotated_edge_normal_i[1])
+        #
+        #     # v_idx += 1
+        # # if np.any(ws < 0):
+        # #     ws[np.nonzero(ws > 0)] = 0
+        # #     ws[np.nonzero(ws)] = 1
+        # #
+        # ws = ws / np.sum(ws)
+        # # n_obstacle2 =
+        #
         # kappa_bar = ws.dot(kappa)
         # tmp_vec = [np.cos(abs(kappa_bar)), np.sin(abs(kappa_bar)) * np.sign(kappa_bar)]
-        # n_obstacle = Rpn.dot(tmp_vec)
-
-        # ax.plot(*self.vertices[v_idx, :], 'go')
-        # ax.plot(*self.vertices[v_idx-1, :], 'ro')
-        plt.show()
-
-        return self.rotate(n_obstacle, Frame.OBSTACLE, output_frame)
+        # n_obstacle = B.dot(tmp_vec)
+        #
+        # return self.rotate(n_obstacle, Frame.OBSTACLE, output_frame)
 
     def init_plot(self, ax=None, show_reference=True, show_name=False, **kwargs):
         line_handles, ax = super().init_plot(ax=ax, show_name=show_name, **kwargs)
