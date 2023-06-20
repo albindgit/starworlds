@@ -9,17 +9,12 @@ class MotionModel(ABC):
         self._rot = rot
         self._t = 0.
 
-    def move(self, obs_self, dt, forbidden_regions=None, dist=0):
+    def move(self, obs_self, dt):
         xy_vel = np.array(self.lin_vel())
         rot_vel = self.rot_vel()
         prev_pos, prev_rot = self._pos.copy(), self._rot
         self._pos += xy_vel * dt
         self._rot += rot_vel * dt
-        # TODO: Nicer fix than hardcoded dilated obstacle
-        if forbidden_regions is not None:
-            tmp_obs = obs_self.dilated_obstacle(padding=dist, id="temp")
-            if np.any([tmp_obs.interior_point(p) for p in forbidden_regions]):
-                self._pos, self._rot = prev_pos, prev_rot
         self._t += dt
 
     def set_pos(self, pos):

@@ -19,15 +19,41 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
             self._xr = np.array(xr)
         self.vertex_angles = None
         self._update_vertex_angles()
+        self.enclosing_ball_diameter = self._polygon.bounds[2]-self._polygon.bounds[0] + self._polygon.bounds[3]-self._polygon.bounds[1]
 
+    def copy(self, id, name):
+        if (id == 'duplicate' or id == 'd'):
+            id = self.id()
+        return StarshapedPolygon(id=id, name=name, polygon=self._polygon, xr=self._xr, motion_model=self._motion_model)
+
+    # Note: Does not recompute the kernel
     def dilated_obstacle(self, padding, id="new", name=None):
-        cp = super().dilated_obstacle(padding, id=id, name=name)
+        cp = self.copy(id, name)
+        cp._polygon = cp._polygon.buffer(padding, cap_style=1, join_style=1)
+        cp._pol_bounds = cp._polygon.bounds
+        cp.enclosing_ball_diameter = max(cp._polygon.bounds[2]-cp._polygon.bounds[0], cp._polygon.bounds[3]-cp._polygon.bounds[1])
+        cp.vertices = np.array(cp._polygon.exterior.coords[:-1])
+        cp.circular_vertices = np.array(cp._polygon.exterior.coords)
+        cp._polygon_global_pose = None
+        cp._polygon_global = None
         cp._update_vertex_angles()
         return cp
 
+    def distance_function(self, x, input_frame=Frame.GLOBAL):
+        x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
+        dist_center = np.linalg.norm(x_obstacle - self._xr, axis=x.ndim - 1)
+        local_radius = np.linalg.norm(self.boundary_mapping(x_obstacle, input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
+                           - self._xr, axis=x.ndim - 1)
+        if dist_center < local_radius:
+            # Return proportional inside to have -> [0, 1]
+            return (dist_center / local_radius) ** 2
+        else:
+            return ((dist_center - local_radius) + 1) ** 2
+
+
     def boundary_mapping(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL):
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
-        intersect_obstacle = self.line_intersection([self._xr, self._xr+10*(x_obstacle-self._xr)],
+        intersect_obstacle = self.line_intersection([self._xr, self._xr+1.1*self.enclosing_ball_diameter*self.reference_direction(x_obstacle, Frame.OBSTACLE, Frame.OBSTACLE)],
                                                     input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
         if not intersect_obstacle:
             return None

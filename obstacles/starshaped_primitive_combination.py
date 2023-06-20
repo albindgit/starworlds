@@ -181,9 +181,9 @@ class StarshapedPrimitiveCombination(StarshapedObstacle):
         x_sh = shapely.geometry.Point(x)
         if self._hull_cluster.contains(x_sh):
             return -1
-        if self._hull_cluster.exterior.contains(x_sh):
-            return 0
-        return 1
+        if self._hull_cluster.disjoint(x_sh):
+            return 1
+        return 0
 
     def _hull_cluster_line_intersections(self, line):
         if self._hull_cluster is None:

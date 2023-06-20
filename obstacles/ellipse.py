@@ -2,7 +2,7 @@ from obstacles import StarshapedObstacle, Frame
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from utils import is_ccw
+from utils import is_ccw, tic, toc
 import shapely
 
 
@@ -11,19 +11,27 @@ class Ellipse(StarshapedObstacle):
         self._a = np.array(a, float)
         self._a2 = np.square(self._a)
         self._n_pol = n_pol
-        self._area = np.pi * self._a[0] * self._a[1]
+        # self._area = np.pi * self._a[0] * self._a[1]
         if xr is None:
             xr = np.zeros(2)
         super().__init__(xr=xr, **kwargs)
+        self.enclosing_ball_diameter = max(2*self._a[0], 2*self._a[1])
+
+    def copy(self, id, name):
+        if (id == 'duplicate' or id == 'd'):
+            id = self.id()
+        return Ellipse(id=id, name=name, a=self._a, xr=self._xr, n_pol=self._n_pol, motion_model=self._motion_model)
 
     def dilated_obstacle(self, padding, id="new", name=None):
         cp = self.copy(id, name)
         cp._a += padding
         cp._a2 = np.square(cp._a)
-        if cp._polygon is not None:
-            cp._polygon = cp._polygon.buffer(padding, cap_style=1, join_style=1)
+        cp.enclosing_ball_diameter = max(2 * cp._a[0], 2 * cp._a[1])
+        if self._polygon is not None:
+            cp._polygon = self._polygon.buffer(padding, cap_style=1, join_style=1)
             cp._polygon_global_pose = None
             cp._polygon_global = None
+            cp._kernel = cp._polygon
         return cp
 
     def init_plot(self, ax=None, show_reference=True, show_name=False, **kwargs):
@@ -58,7 +66,8 @@ class Ellipse(StarshapedObstacle):
 
     def boundary_mapping(self, x, input_frame=Frame.GLOBAL, output_frame=Frame.GLOBAL):
         x_obstacle = self.transform(x, input_frame, Frame.OBSTACLE)
-        intersect_obstacle = self.line_intersection([self._xr, self._xr+10*(x_obstacle-self._xr)],
+
+        intersect_obstacle = self.line_intersection([self._xr, self._xr+1.1*self.enclosing_ball_diameter*self.reference_direction(x_obstacle, Frame.OBSTACLE, Frame.OBSTACLE)],
                                                     input_frame=Frame.OBSTACLE, output_frame=Frame.OBSTACLE)
         if not intersect_obstacle:
             return None
@@ -90,15 +99,24 @@ class Ellipse(StarshapedObstacle):
         l_left_obstacle = l0_obstacle if l0_obstacle[0] < l1_obstacle[0] else l1_obstacle
         l_right_obstacle = l1_obstacle if l0_obstacle[0] < l1_obstacle[0] else l0_obstacle
 
+
+        vertical_line = abs(l_right_obstacle[0]-l_left_obstacle[0]) < 1e-4
+        if not vertical_line:
+            # Line parameters
+            m = (l_right_obstacle[1] - l_left_obstacle[1]) / (l_right_obstacle[0] - l_left_obstacle[0])
+            c = l_left_obstacle[1] - m * l_left_obstacle[0]
+            vertical_line = abs(m) > 100
+
         # Special case with vertical line
-        if abs(l_right_obstacle[0]-l_left_obstacle[0]) < 1e-3:
+        if vertical_line:
+            if l_right_obstacle[0] < -self._a[0] or l_right_obstacle[0] > self._a[0]:
+                return []
 
             l_top_obstacle = l_right_obstacle if l_right_obstacle[1] > l_left_obstacle[1] else l_left_obstacle
             l_bottom_obstacle = l_left_obstacle if l_right_obstacle[1] > l_left_obstacle[1] else l_right_obstacle
             x_intersect_top_obstacle, x_intersect_bottom_obstacle = np.array([0, self._a[1]]), np.array([0, -self._a[1]])
             x_intersect_top = self.transform(x_intersect_top_obstacle, Frame.OBSTACLE, output_frame)
             x_intersect_bottom = self.transform(x_intersect_bottom_obstacle, Frame.OBSTACLE, output_frame)
-
             if l_top_obstacle[1] >= self._a[1] and l_bottom_obstacle[1] <= -self._a[1]:
                 return [x_intersect_top, x_intersect_bottom]
             elif l_top_obstacle[1] >= self._a[1] and l_bottom_obstacle[1] <= self._a[1]:
@@ -107,10 +125,6 @@ class Ellipse(StarshapedObstacle):
                 return [x_intersect_bottom]
             else:
                 return []
-
-        # Line parameters
-        m = (l_right_obstacle[1] - l_left_obstacle[1]) / (l_right_obstacle[0] - l_left_obstacle[0])
-        c = l_left_obstacle[1] - m * l_left_obstacle[0]
 
         # obstacle ellipse coefficients at intersection with line m*x+c
         kx2 = self._a2[0] * m**2 + self._a2[1]
@@ -185,8 +199,8 @@ class Ellipse(StarshapedObstacle):
 
         return [tp1, tp2]
 
-    def area(self):
-        return self._area
+    # def area(self):
+    #     return self._area
 
     # ------------ Private methods ------------ #
     def _check_convexity(self):
@@ -198,5 +212,6 @@ class Ellipse(StarshapedObstacle):
     def _compute_polygon_representation(self):
         # logprint(str(self) + ": " + str(self._polygon), 0)
         t = np.linspace(0, 2 * np.pi, self._n_pol, endpoint=False)
-        polygon = np.vstack((self._a[0] * np.cos(t), self._a[1] * np.sin(t))).T
+        a = self._a + 1e-3 # Add offset to adjust for polygon approximation
+        polygon = np.vstack((a[0] * np.cos(t), a[1] * np.sin(t))).T
         self._polygon = shapely.geometry.Polygon(polygon)

@@ -204,9 +204,9 @@ def get_intersection(a1, a2, b1, b2):
 
 
 def equilateral_triangle(centroid, side_length, rot=0):
-    triangle = np.array(centroid) + np.array([[0, 2 / 3 * side_length],
-                                               [1 / 2 * side_length, -1 / 3 * side_length],
-                                               [-1 / 2 * side_length, -1 / 3 * side_length]])
+    triangle = np.array(centroid) + np.array([[0, 1 / np.sqrt(3) * side_length],
+                                               [1 / 2 * side_length, -1 / (2*np.sqrt(3)) * side_length],
+                                               [-1 / 2 * side_length, -1 / (2*np.sqrt(3)) * side_length]])
     if not rot:
         return triangle
     c,s = np.cos(rot), np.sin(rot)

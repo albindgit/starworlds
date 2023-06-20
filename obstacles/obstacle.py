@@ -64,9 +64,9 @@ class Obstacle(ABC):
     def boundary_point(self, x, input_frame=Frame.GLOBAL):
         return np.isclose(self.point_location(x, input_frame), 0.)
 
-    def move(self, dt, forbidden_regions=None, dist=0):
+    def move(self, dt):
         if self._motion_model is not None:
-            self._motion_model.move(self, dt, forbidden_regions, dist)
+            self._motion_model.move(self, dt)
 
     def id(self): return self._id
 

@@ -1,6 +1,6 @@
 import shapely
 import numpy as np
-from obstacles import Frame, StarshapedPrimitiveCombination, StarshapedPolygon
+from obstacles import Frame, StarshapedPrimitiveCombination, Ellipse, StarshapedPolygon
 from utils import is_ccw, is_collinear, equilateral_triangle, Cone, tic, toc, draw_shapely_polygon
 from scipy.spatial import ConvexHull
 import starshaped_hull as sh
@@ -83,53 +83,95 @@ def get_intersection_clusters(clusters):
     return new_clusters, intersections_exist
 
 
-def compute_kernel_points(cl, x, xg, epsilon, cl_prev):
-    if len(cl.obstacles) == 1 and cl.obstacles[0].is_starshaped():
-        triangle_center = cl.obstacles[0].xr(Frame.GLOBAL)
-    else:
-        triangle_center_prev = np.mean(cl_prev.kernel_points, axis=0) if cl_prev else None
-
-        triangle_center_selection_set = cl.admissible_kernel.intersection(cl.polygon_excluding_hull())
-        if triangle_center_selection_set.is_empty:
-            triangle_center_selection_set = cl.admissible_kernel
-
-        if triangle_center_prev is None:
-            tc, _ = shapely.ops.nearest_points(cl.admissible_kernel, triangle_center_selection_set.centroid)
-            triangle_center = np.array(tc.coords[0])
-            while is_collinear(x, xg, triangle_center):
-                triangle_center += np.random.uniform(-1e-4, 1e-4, 2)
-        # Use previous triangle center if still in selection set
-        elif triangle_center_selection_set.contains(shapely.geometry.Point(triangle_center_prev))\
-                and not is_collinear(x, xg, triangle_center_prev):
-            triangle_center = triangle_center_prev
-        else:
-            x_xg_line = shapely.geometry.LineString([x, xg])
-            splitted_tcss = shapely.ops.split(triangle_center_selection_set, x_xg_line).geoms
-            triangle_center_selection_set = splitted_tcss[0]
-            if len(splitted_tcss) > 1:
-                for i in range(1, len(splitted_tcss)):
-                    if is_ccw(x, xg, splitted_tcss[i].centroid.coords[0]) == is_ccw(x, xg, triangle_center_prev):
-                        triangle_center_selection_set = splitted_tcss[i]
-                        break
-            tc, _ = shapely.ops.nearest_points(cl.admissible_kernel, triangle_center_selection_set.centroid)
-            triangle_center = np.array(tc.coords[0])
-
-    if cl.admissible_kernel.geom_type == 'Polygon':
-        dist = cl.admissible_kernel.exterior.distance(shapely.geometry.Point(triangle_center))
-    else:
-        tc = shapely.geometry.Point(triangle_center)
-        dist = min([p.exterior.distance(tc) for p in cl.admissible_kernel.geoms])
-    triangle_length = min(epsilon, 0.9 * dist)
-    kernel_points = equilateral_triangle(triangle_center, triangle_length)
-    return kernel_points
-
-
-# Input: Convex obstacles, excluding points x and xg, kernel width epsilon
-def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, previous_clusters=None,
-                        make_convex=False, exclude_obstacles=False, max_iterations=np.inf, verbose=False,
-                        timing_verbose=False, return_history=False):
+def compute_kernel_points(cl, x, xg, epsilon, cl_prev, workspace):
+    triangle_center_prev = np.mean(cl_prev.kernel_points, axis=0) if cl_prev else None
 
     t0 = tic()
+    ts = {}
+    # Find triangle center selection set (TCSS)
+    tcss = cl.admissible_kernel
+    # If obstacle is in exterior of workspace limit TCSS to workspace exterior
+    if not cl.polygon_excluding_hull().within(workspace.polygon()):
+        tcss_tmp = tcss.difference(workspace.polygon())
+        tcss_tmp = tcss_tmp.intersection(cl.polygon_excluding_hull()) # NOTE: Added for exlcluding undesired extremas in other workspace exterior than close to obstacles
+        if tcss_tmp.area > 1e-6:
+            tcss = tcss_tmp
+    tcss_tmp = tcss
+    ts['ws check'] = toc(t0)
+    # Try to use intersection of all obstacle kernels in cluster if all starshaped
+    if all([o.is_starshaped() for o in cl.obstacles]):
+        for o in cl.obstacles:
+            tcss_tmp = tcss_tmp.intersection(o.kernel())
+    ts['kernel intersection'] = toc(t0)-list(ts.values())[-1]
+    # Else, try to use union of all obstacles in cluster
+    if tcss_tmp.area < 1e-6:
+        tcss_tmp = tcss.intersection(cl.polygon_excluding_hull())
+    ts['cluster intersection'] = toc(t0)-list(ts.values())[-1]
+    if tcss_tmp.area > 1e-6:
+        tcss = tcss_tmp
+
+    # If not tc from previous iteraion, use closest point to TCSS in ad ker as triangle center
+    if triangle_center_prev is None:
+        tc, _ = shapely.ops.nearest_points(cl.admissible_kernel, tcss.centroid)
+        triangle_center = np.array(tc.coords[0])
+        while is_collinear(x, xg, triangle_center):
+            triangle_center += np.random.uniform(-1e-4, 1e-4, 2)
+    # Else, use previous triangle center if still in selection set
+    elif tcss.contains(shapely.geometry.Point(triangle_center_prev))\
+            and not is_collinear(x, xg, triangle_center_prev):
+        triangle_center = triangle_center_prev
+    # Else, try to maintain triangle center on same side of l(x,xg) as previous time step
+    else:
+        x_xg_line = shapely.geometry.LineString([x, xg])
+        splitted_tcss = shapely.ops.split(tcss, x_xg_line).geoms
+        triangle_center_selection_set = splitted_tcss[0]
+        if len(splitted_tcss) > 1:
+            for i in range(1, len(splitted_tcss)):
+                if is_ccw(x, xg, splitted_tcss[i].centroid.coords[0]) == is_ccw(x, xg, triangle_center_prev):
+                    triangle_center_selection_set = splitted_tcss[i]
+                    break
+        tc, _ = shapely.ops.nearest_points(cl.admissible_kernel, triangle_center_selection_set.centroid)
+        triangle_center = np.array(tc.coords[0])
+
+    ts['tc selection'] = toc(t0)-list(ts.values())[-1]
+
+    # if cl.name == '5_6_7':
+    #     hs, _ = draw_shapely_polygon(tcss, plt.gca(), fc='g')
+    #     hs += plt.plot(*triangle_center, 'kd')
+    #     while not plt.waitforbuttonpress(): pass
+    #     [h.remove() for h in hs]
+
+    # Select kernel points as largest equilateral triangle in TCSS (with maximum side length epsilon)
+    if tcss.geom_type == 'Polygon':
+        dist = tcss.exterior.distance(shapely.geometry.Point(triangle_center))
+    else:
+        tc = shapely.geometry.Point(triangle_center)
+        dist = min([p.exterior.distance(tc) for p in tcss.geoms])
+    triangle_length = min(epsilon, 0.9 * dist)
+    kernel_points = equilateral_triangle(triangle_center, triangle_length)
+    ts['triangle generation'] = toc(t0)-list(ts.values())[-1]
+    tot_time = sum(ts.values())
+    for k in ts.keys():
+        ts[k] = int(ts[k] / tot_time * 100)
+    # print(ts)
+    return kernel_points
+
+def extract_cluster(cl, cl_list):
+    if cl_list is None:
+        return None
+    for cl_i in cl_list:
+        if cl.name == cl_i.name:
+            return cl_i
+    return None
+
+# Input: Convex obstacles, excluding points x and xg, kernel width epsilon
+def cluster_and_starify(obstacles, x, xg, epsilon, workspace=None, max_compute_time=np.inf, previous_clusters=None,
+                        make_convex=False, exclude_obstacles=False, max_iterations=np.inf, verbose=False,
+                        timing_verbose=False, return_history=False):
+    t0 = tic()
+
+    if workspace is None:
+        workspace = Ellipse([1e10, 1e10])
 
     # Exit flags
     INCOMPLETE = 0
@@ -185,33 +227,73 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
     init_kernel_time = toc(t0)
 
     # -- First iteration -- #
+
+    ker_sel_time, hull_compute_time, star_obj_time = [0], [0], [0]
     # Initialize clusters as single obstacles
     clusters = []
     for o in obstacles:
         # Ensure not xr in l(x,xg)
-        while is_collinear(x, o.xr(), xg):
-            o.set_xr(o.xr(output_frame=Frame.OBSTACLE) + np.random.normal(0, 0.01, 2))
-        clusters += [ObstacleCluster([o])]
-        # clusters[-1].polygon()
+        # while is_collinear(x, o.xr(), xg):
+        #     o.set_xr(o.xr(output_frame=Frame.OBSTACLE) + np.random.normal(0, 0.01, 2))
+        cl = ObstacleCluster([o])
 
-        if not o.is_starshaped():
-            cl = clusters[-1]
-            t1 = tic()
-            cl.admissible_kernel = adm_ker_robot_cones[o.id()].intersection(adm_ker_goal_cones[o.id()])
-            kernel_time[0] += toc(t1)
+        # New---
+        t1 = tic()
+        cl.admissible_kernel = adm_ker_robot_cones[o.id()].intersection(adm_ker_goal_cones[o.id()])
+        kernel_time[0] += toc(t1)
 
-            t1 = tic()
-            cl_prev = None
-            if previous_clusters:
-                for p_cl in previous_clusters:
-                    if cl.name == p_cl.name:
-                        cl_prev = p_cl
-            cl.kernel_points = compute_kernel_points(cl, x, xg, epsilon, cl_prev)
-            # -- Compute starshaped hull of cluster
-            k_centroid = np.mean(cl.kernel_points, axis=0)
-            cl._polygon = sh.kernel_starshaped_hull(o, cl.kernel_points)
-            cl.cluster_obstacle = StarshapedPolygon(cl._polygon, xr=k_centroid, id=o.id())
-            hull_time[0] += toc(t1)
+        t1 = tic()
+        cl_prev = extract_cluster(cl, previous_clusters)
+        # if cl_prev is None:
+        #     cl_prev.kernel_points = equilateral_triangle(o.xr(), epsilon)
+        cl.kernel_points = compute_kernel_points(cl, x, xg, epsilon, cl_prev, workspace=workspace)
+        ker_sel_time[0] += toc(t1)
+        t1 = tic()
+
+        # -- Compute starshaped hull of cluster
+        cl_id = "new" if cl_prev is None else cl_prev.cluster_obstacle.id()
+        cluster_hull_extensions = sh.kernel_starshaped_hull(cl.obstacles, cl.kernel_points)
+        hull_compute_time[0] += toc(t1)
+        t1 = tic()
+        k_centroid = np.mean(cl.kernel_points, axis=0)
+        if cluster_hull_extensions is None:
+            cl.cluster_obstacle = o
+            cl.cluster_obstacle.set_xr(k_centroid, input_frame=Frame.GLOBAL)
+        else:
+        # Non-starshaped polygons are included in the cluster hull
+        # cl_obstacles = [o] if o.is_starshaped() else []
+            cl.cluster_obstacle = StarshapedPrimitiveCombination(cl.obstacles, cluster_hull_extensions, xr=k_centroid,
+                                                             id=cl_id)
+        star_obj_time[0] += toc(t1)
+        # cl.polygon()
+        # if o.is_starshaped and o.kernel().contains(shapely.geometry.Point(k_centroid)):
+        #     cl.cluster_obstacle
+        # cl.cluster_obstacle = StarshapedPolygon(cl._polygon, xr=k_centroid, id=o.id())
+        # hull_time[0] += toc(t1)
+
+
+        clusters += [cl]
+
+
+        # if not o.is_starshaped():
+        #     cl = clusters[-1]
+        #     t1 = tic()
+        #     cl.admissible_kernel = adm_ker_robot_cones[o.id()].intersection(adm_ker_goal_cones[o.id()])
+        #     kernel_time[0] += toc(t1)
+        #
+        #     t1 = tic()
+        #     cl_prev = None
+        #     if previous_clusters:
+        #         for p_cl in previous_clusters:
+        #             if cl.name == p_cl.name:
+        #                 cl_prev = p_cl
+        #     cl.kernel_points = compute_kernel_points(cl, x, xg, epsilon, cl_prev, workspace=workspace)
+        #     # -- Compute starshaped hull of cluster
+        #     k_centroid = np.mean(cl.kernel_points, axis=0)
+        #     cl._polygon = sh.kernel_starshaped_hull(o, cl.kernel_points)
+        #     cl.cluster_obstacle = StarshapedPolygon(cl._polygon, xr=k_centroid, id=o.id())
+        #     hull_time[0] += toc(t1)
+    hull_time[0] = ker_sel_time[0] + hull_compute_time[0] + star_obj_time[0]
 
     # Set cluster history
     cluster_history = {cl.name: cl for cl in clusters}
@@ -226,7 +308,6 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
     n_iter = 1
     # -- End first iteration -- #
 
-    ker_sel_time, hull_compute_time, star_obj_time = [0], [0], [0]
     while intersection_exists:
         kernel_time += [0.]
         hull_time += [0.]
@@ -253,29 +334,29 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
             t1 = tic()
 
             # If cluster is two convex obstacles
-            if len(cl.obstacles) == 2 and cl.obstacles[0].is_convex() and cl.obstacles[1].is_convex():
-                cl.admissible_kernel = cl.obstacles[0].polygon().intersection(cl.obstacles[1].polygon()).buffer(0.01)
-            else:
-                adm_ker_robot = Cone.list_intersection([adm_ker_robot_cones[o.id()] for o in cl.obstacles], same_apex=True)
-                adm_ker_goal = Cone.list_intersection([adm_ker_goal_cones[o.id()] for o in cl.obstacles], same_apex=True)
-                cl.admissible_kernel = adm_ker_robot.intersection(adm_ker_goal)
+            # if len(cl.obstacles) == 2 and cl.obstacles[0].is_convex() and cl.obstacles[1].is_convex():
+            #     cl.admissible_kernel = cl.obstacles[0].polygon().intersection(cl.obstacles[1].polygon()).buffer(0.01)
+            # else:
+            adm_ker_robot = Cone.list_intersection([adm_ker_robot_cones[o.id()] for o in cl.obstacles], same_apex=True)
+            adm_ker_goal = Cone.list_intersection([adm_ker_goal_cones[o.id()] for o in cl.obstacles], same_apex=True)
+            cl.admissible_kernel = adm_ker_robot.intersection(adm_ker_goal)
 
-                if cl.admissible_kernel.is_empty or cl.admissible_kernel.area < 1e-6:
-                    if verbose:
-                        print("[Cluster and Starify]: Could not find disjoint starshaped obstacles. Admissible kernel empty for the cluster " + cl.name)
-                    cluster_iterations += [clusters]
-                    return default_result()
+            if cl.admissible_kernel.is_empty or cl.admissible_kernel.area < 1e-6:
+                if verbose:
+                    print("[Cluster and Starify]: Could not find disjoint starshaped obstacles. Admissible kernel empty for the cluster " + cl.name)
+                cluster_iterations += [clusters]
+                return default_result()
 
-                # Exclude other obstacles
-                adm_ker_o_ex = cl.admissible_kernel
-                if exclude_obstacles:
-                    for o in cl.obstacles:
-                        for o_ex in obstacles:
-                            if o_ex.id() == o.id() or adm_ker_obstacles[o.id()][o_ex.id()] is None:
-                                continue
-                            adm_ker_o_ex = adm_ker_o_ex.intersection(adm_ker_obstacles[o.id()][o_ex.id()])
-                    if not (adm_ker_o_ex.is_empty or adm_ker_o_ex.area < 1e-6):
-                        cl.admissible_kernel = adm_ker_o_ex
+            # Exclude other obstacles
+            adm_ker_o_ex = cl.admissible_kernel
+            if exclude_obstacles:
+                for o in cl.obstacles:
+                    for o_ex in obstacles:
+                        if o_ex.id() == o.id() or adm_ker_obstacles[o.id()][o_ex.id()] is None:
+                            continue
+                        adm_ker_o_ex = adm_ker_o_ex.intersection(adm_ker_obstacles[o.id()][o_ex.id()])
+                if not (adm_ker_o_ex.is_empty or adm_ker_o_ex.area < 1e-6):
+                    cl.admissible_kernel = adm_ker_o_ex
 
             kernel_time[n_iter] += toc(t1)
             # ----------- End Admissible Kernel ----------- #
@@ -290,7 +371,7 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
                         cl_prev = p_cl
 
             # -- Kernel points selection
-            cl.kernel_points = compute_kernel_points(cl, x, xg, epsilon, cl_prev)
+            cl.kernel_points = compute_kernel_points(cl, x, xg, epsilon, cl_prev, workspace=workspace)
             ker_sel_time[n_iter] += toc(t1)
             t1 = tic()
 
@@ -347,7 +428,8 @@ def cluster_and_starify(obstacles, x, xg, epsilon, max_compute_time=np.inf, prev
                 hull_polygon = shapely.geometry.Polygon(v[hull.vertices, :])
                 if not any([hull_polygon.contains(shapely.geometry.Point(x_ex)) for x_ex in [x, xg]]) and not any(
                         [hull_polygon.intersects(clusters[k].polygon()) for k in range(len(clusters)) if k != j]):
-                    clusters[j].cluster_obstacle = StarshapedPrimitiveCombination(cl.obstacles, hull_polygon, cl.cluster_obstacle.xr(Frame.GLOBAL))
+                    # clusters[j].cluster_obstacle = StarshapedPrimitiveCombination(cl.obstacles, hull_polygon, cl.cluster_obstacle.xr(Frame.GLOBAL))
+                    clusters[j].cluster_obstacle = StarshapedPolygon(hull_polygon, xr=cl.cluster_obstacle.xr(Frame.GLOBAL))
 
         convex_time = toc(t1)
     # ----------- End Make Convex ----------- #
