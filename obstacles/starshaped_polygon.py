@@ -155,6 +155,10 @@ class StarshapedPolygon(Polygon, StarshapedObstacle):
         #
         # return self.rotate(n_obstacle, Frame.OBSTACLE, output_frame)
 
+    def set_xr(self, xr, input_frame=Frame.OBSTACLE, safe_set=False):
+        super().set_xr(xr, input_frame, safe_set)
+        self._update_vertex_angles()
+    
     def init_plot(self, ax=None, show_reference=True, show_name=False, **kwargs):
         line_handles, ax = super().init_plot(ax=ax, show_name=show_name, **kwargs)
         if ax is None:
